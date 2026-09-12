@@ -1,0 +1,6 @@
+{
+  "name": "CycloVision",
+  "description": "AI-Powered Cyclone Prediction prototype for SIH 2026 Problem Statement 26070",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
