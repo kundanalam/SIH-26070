@@ -214,14 +214,31 @@ Examine this image carefully:
 1. Is this a genuine meteorological satellite image or weather radar image of an atmospheric storm/cyclone?
 CRITICAL: If the image is a person, superhero/comic character (like Spider-Man), cartoon, movie screenshot, meme, landscape photo, animal, or any non-meteorological image, you MUST set "isSatelliteImage": false and "cycloneDetected": false. Do NOT classify superhero or non-satellite images as cyclones!
 2. If it IS a genuine meteorological satellite image, does it show a tropical cyclone, tropical depression, storm eye, or organized spiral rainbands?
-3. Consider the optional environmental telemetry: Wind Speed: ${windSpeed} km/h, Sea Surface Temp: ${seaSurfaceTemperature} °C, Pressure: ${atmosphericPressure} hPa, Rainfall: ${rainfall} mm.
-4. Output JSON strictly adhering to:
+3. Analyze the visual features of this specific image (e.g. eye presence, cloud compactness, spiral rainband curvature).
+4. Estimate realistic, distinct meteorological parameters specifically for this storm image (do not use generic values):
+   - windSpeed (km/h)
+   - atmosphericPressure (hPa: 910-960 for severe cyclones, 970-998 for moderate/depressions, 1008-1016 for calm ocean)
+   - seaSurfaceTemperature (°C: 26.0-31.0)
+   - rainfall (mm/h)
+   - movementDegree (azimuth heading 0-360)
+   - forwardSpeed (translation speed in km/h: 12-25)
+   - movementDirection (e.g. "West-Northwest (WNW)", "North-Northwest (NNW)")
+   - estimatedLandfall (corridor description)
+5. Output JSON strictly adhering to:
 {
   "isSatelliteImage": boolean,
   "detectedSubject": string,
   "cycloneDetected": boolean,
-  "classification": "Non-Meteorological Image" | "No Cyclone" | "Low Pressure Area" | "Depression" | "Deep Depression" | "Cyclonic Storm" | "Severe Cyclonic Storm" | "Very Severe Cyclonic Storm" | "Extremely Severe Cyclonic Storm" | "Super Cyclonic Storm",
+  "classification": "Non-Meteorological Image" | "No Cyclone / Calm Ocean" | "Low Pressure Area" | "Depression" | "Deep Depression" | "Cyclonic Storm" | "Severe Cyclonic Storm" | "Very Severe Cyclonic Storm" | "Extremely Severe Cyclonic Storm" | "Super Cyclonic Storm",
   "predictedWindSpeed": number,
+  "atmosphericPressure": number,
+  "seaSurfaceTemperature": number,
+  "rainfall": number,
+  "windDirection": number,
+  "movementDegree": number,
+  "forwardSpeed": number,
+  "movementDirection": string,
+  "estimatedLandfall": string,
   "confidence": number,
   "developmentStage": "Intensifying" | "Steady" | "Weakening" | "Dissipating",
   "riskLevel": "Low" | "Moderate" | "High" | "Very High",
@@ -294,6 +311,13 @@ CRITICAL: If the image is a person, superhero/comic character (like Spider-Man),
 
               // Real cyclone detected by AI
               const speed = aiResult.predictedWindSpeed || Math.round(windSpeed);
+              const pressure = aiResult.atmosphericPressure || Math.max(910, Math.min(1010, Math.round(1012 - Math.pow(speed / 3.4, 1.15))));
+              const sst = aiResult.seaSurfaceTemperature || Number((26.5 + (speed / 200) * 3.8).toFixed(1));
+              const rain = aiResult.rainfall || Math.round(speed * 0.95);
+              const heading = aiResult.movementDegree ?? (body.windDirection ? (body.windDirection + 10) % 360 : 295);
+              const fSpeed = aiResult.forwardSpeed ?? Math.max(12, Math.min(24, Math.round(14 + (speed % 7))));
+              const movement = computeCycloneMovement(heading, body.latitude, body.longitude, true);
+
               return res.json({
                 cycloneDetected: true,
                 classification: aiResult.classification,
@@ -301,6 +325,19 @@ CRITICAL: If the image is a person, superhero/comic character (like Spider-Man),
                 confidence: aiResult.confidence || 88,
                 developmentStage: aiResult.developmentStage || 'Intensifying',
                 riskLevel: aiResult.riskLevel || 'High',
+                movementDirection: aiResult.movementDirection || movement.movementDirection,
+                movementDegree: heading,
+                forwardSpeed: fSpeed,
+                estimatedLandfall: aiResult.estimatedLandfall || movement.estimatedLandfall,
+                parameters: {
+                  windSpeed: speed,
+                  atmosphericPressure: pressure,
+                  seaSurfaceTemperature: sst,
+                  rainfall: rain,
+                  windDirection: heading,
+                  latitude: body.latitude || 15.2,
+                  longitude: body.longitude || 82.4,
+                },
                 summaryExplanation: aiResult.summaryExplanation,
                 intensityHistory: computeIntensityHistory(speed, aiResult.developmentStage || 'Intensifying'),
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -314,84 +351,154 @@ CRITICAL: If the image is a person, superhero/comic character (like Spider-Man),
       }
 
       // 3. Fallback Meteorological Rules & Validation (when offline or model busy)
-      const isSampleImage = !!(satelliteImage && (
-        satelliteImage.includes('INSAT-3D') ||
-        satelliteImage.includes('oceanBg') ||
-        satelliteImage.includes('bay_of_bengal')
-      ));
+      const isClearOceanSample = !!(
+        (satelliteImage && (satelliteImage.includes('calmOceanBg') || satelliteImage.includes('Clear_Ocean'))) ||
+        lowerName.includes('calm') || lowerName.includes('clear') || lowerName.includes('no_cyclone')
+      );
 
-      const isNamedAsSatellite = [
-        'insat', 'cyclone', 'satellite', 'goes', 'himawari', 'meteosat',
-        'radar', 'storm', 'typhoon', 'hurricane'
-      ].some(term => lowerName.includes(term));
+      const isDepressionSample = !!(
+        (satelliteImage && (satelliteImage.includes('depressionBg') || satelliteImage.includes('Tropical_Depression'))) ||
+        lowerName.includes('depression')
+      );
 
-      // If user uploaded a custom image and it is not verified satellite imagery, reject cyclone detection:
-      if (satelliteImage && !isSampleImage && !isNamedAsSatellite) {
+      const isSevereSample = !!(
+        (satelliteImage && (satelliteImage.includes('eyeHole') || satelliteImage.includes('Severe_Cyclone'))) ||
+        lowerName.includes('severe') || lowerName.includes('super')
+      );
+
+      if (isClearOceanSample) {
         return res.json({
           cycloneDetected: false,
-          classification: 'Non-Meteorological Image',
-          predictedWindSpeed: 0,
-          confidence: 96,
+          classification: 'No Cyclone / Calm Ocean',
+          predictedWindSpeed: 16,
+          confidence: 98,
           developmentStage: 'Dissipating',
           riskLevel: 'Low',
-          summaryExplanation: `No cyclone detected. The uploaded image ("${imageName || 'image'}") could not be verified as genuine meteorological satellite data. Tropical cyclone analysis requires verified satellite data (e.g. INSAT-3D, GOES, Himawari).`,
+          movementDirection: 'Stationary / No Cyclonic Track',
+          movementDegree: 0,
+          forwardSpeed: 0,
+          estimatedLandfall: 'None (No active cyclonic circulation)',
+          parameters: {
+            windSpeed: 16,
+            atmosphericPressure: 1012,
+            seaSurfaceTemperature: 26.4,
+            rainfall: 1,
+            windDirection: 110,
+            latitude: 10.1,
+            longitude: 88.0,
+          },
+          summaryExplanation: 'No organized tropical vortex or cyclonic circulation detected. Satellite imagery shows clear ocean waters with sparse non-convective clouds.',
           intensityHistory: [
-            { time: 'T-18h', windSpeed: 0 },
-            { time: 'T-12h', windSpeed: 0 },
-            { time: 'T-6h', windSpeed: 0 },
-            { time: 'Present', windSpeed: 0 },
-            { time: 'T+6h', windSpeed: 0, isProjected: true },
-            { time: 'T+12h', windSpeed: 0, isProjected: true },
-            { time: 'T+24h', windSpeed: 0, isProjected: true },
+            { time: 'T-18h', windSpeed: 14 },
+            { time: 'T-12h', windSpeed: 15 },
+            { time: 'T-6h', windSpeed: 15 },
+            { time: 'Present', windSpeed: 16 },
+            { time: 'T+6h', windSpeed: 15, isProjected: true },
+            { time: 'T+12h', windSpeed: 14, isProjected: true },
+            { time: 'T+24h', windSpeed: 12, isProjected: true },
           ],
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isDemo: true,
         });
       }
 
-      // If user uploaded a custom image and didn't name it cyclone/satellite, we check if environmental parameters indicate severe weather
-      const hasStrongCycloneParams = windSpeed >= 62 && atmosphericPressure <= 990;
-
-      if (!isSampleImage && !hasStrongCycloneParams) {
+      if (isDepressionSample) {
+        const depSpeed = Math.min(55, Math.max(42, Math.round(windSpeed * 0.35 || 48)));
+        const depMovement = computeCycloneMovement(260, 12.8, 86.4, true);
         return res.json({
-          cycloneDetected: false,
-          classification: 'No Cyclone Detected',
-          predictedWindSpeed: Math.round(windSpeed),
-          confidence: 85,
-          developmentStage: 'Dissipating',
-          riskLevel: 'Low',
-          summaryExplanation: 'No organized tropical cyclonic circulation detected from the uploaded imagery and current environmental parameters.',
+          cycloneDetected: true,
+          classification: 'Tropical Depression (Low Intensity)',
+          predictedWindSpeed: depSpeed,
+          confidence: 86,
+          developmentStage: 'Steady',
+          riskLevel: 'Moderate',
+          movementDirection: depMovement.movementDirection,
+          movementDegree: 290,
+          forwardSpeed: 14,
+          estimatedLandfall: 'South Odisha & North Andhra Coast (~32-40h)',
+          parameters: {
+            windSpeed: depSpeed,
+            atmosphericPressure: 996,
+            seaSurfaceTemperature: 28.2,
+            rainfall: 35,
+            windDirection: 260,
+            latitude: 12.8,
+            longitude: 86.4,
+          },
+          summaryExplanation: 'A developing tropical depression is visible with moderate convective rainbands, tracking West-Northwest (290°) at 14 km/h without an organized storm eye.',
           intensityHistory: [
-            { time: 'T-18h', windSpeed: Math.round(windSpeed * 0.9) },
-            { time: 'T-12h', windSpeed: Math.round(windSpeed * 0.95) },
-            { time: 'T-6h', windSpeed: Math.round(windSpeed * 0.98) },
-            { time: 'Present', windSpeed: Math.round(windSpeed) },
-            { time: 'T+6h', windSpeed: Math.round(windSpeed * 0.9), isProjected: true },
-            { time: 'T+12h', windSpeed: Math.round(windSpeed * 0.8), isProjected: true },
-            { time: 'T+24h', windSpeed: Math.round(windSpeed * 0.7), isProjected: true },
+            { time: 'T-18h', windSpeed: Math.round(depSpeed * 0.78) },
+            { time: 'T-12h', windSpeed: Math.round(depSpeed * 0.88) },
+            { time: 'T-6h', windSpeed: Math.round(depSpeed * 0.94) },
+            { time: 'Present', windSpeed: depSpeed },
+            { time: 'T+6h', windSpeed: Math.round(depSpeed * 1.05), isProjected: true },
+            { time: 'T+12h', windSpeed: Math.round(depSpeed * 1.08), isProjected: true },
+            { time: 'T+24h', windSpeed: Math.round(depSpeed * 1.12), isProjected: true },
           ],
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isDemo: true,
         });
       }
 
-      // Genuine or sample cyclone detection flow
-      let classification = 'Very Severe Cyclonic Storm';
-      let riskLevel: 'Low' | 'Moderate' | 'High' | 'Very High' = 'High';
+      if (isSevereSample) {
+        const severeSpeed = Math.max(130, Math.round(windSpeed || 145));
+        const severeMovement = computeCycloneMovement(335, 15.2, 82.4, true);
+        return res.json({
+          cycloneDetected: true,
+          classification: severeSpeed >= 166 ? 'Extremely Severe Cyclonic Storm' : 'Very Severe Cyclonic Storm',
+          predictedWindSpeed: severeSpeed,
+          confidence: 94,
+          developmentStage: 'Intensifying',
+          riskLevel: 'High',
+          movementDirection: 'North-Northwest (NNW)',
+          movementDegree: 335,
+          forwardSpeed: 19,
+          estimatedLandfall: 'Puri / Paradip Coast, Odisha (~24-30h)',
+          parameters: {
+            windSpeed: severeSpeed,
+            atmosphericPressure: 940,
+            seaSurfaceTemperature: 29.8,
+            rainfall: 140,
+            windDirection: 285,
+            latitude: 15.2,
+            longitude: 82.4,
+          },
+          summaryExplanation: 'Dense overcast eyewall with high-velocity spiral rainbands detected. Vortex is tracking North-Northwest (335°) at 19 km/h under favorable subtropical ridge steering.',
+          intensityHistory: computeIntensityHistory(severeSpeed, 'Intensifying'),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isDemo: true,
+        });
+      }
 
-      if (windSpeed >= 222 || atmosphericPressure < 920) {
+      // 4. Custom Uploaded Image Analysis
+      // Calculate realistic meteorological parameters derived from image metadata and environmental boundaries
+      const isProbableCyclone = windSpeed >= 40 || atmosphericPressure <= 998 || lowerName.includes('cyclone') || lowerName.includes('storm');
+      const calcSpeed = Math.max(15, Math.min(230, Math.round(windSpeed || 75)));
+      const calcPressure = atmosphericPressure < 1000 
+        ? atmosphericPressure 
+        : Math.round(1012 - Math.pow(calcSpeed / 3.4, 1.15));
+      const calcSST = seaSurfaceTemperature > 25 ? seaSurfaceTemperature : Number((26.5 + (calcSpeed / 200) * 3.8).toFixed(1));
+      const calcRain = rainfall > 0 ? rainfall : Math.round(calcSpeed * 0.9);
+
+      let classification = 'Low Pressure Area';
+      let riskLevel: 'Low' | 'Moderate' | 'High' | 'Very High' = 'Low';
+
+      if (!isProbableCyclone) {
+        classification = 'No Cyclone / Calm Ocean';
+        riskLevel = 'Low';
+      } else if (calcSpeed >= 222 || calcPressure < 920) {
         classification = 'Super Cyclonic Storm';
         riskLevel = 'Very High';
-      } else if (windSpeed >= 166 || atmosphericPressure < 945) {
+      } else if (calcSpeed >= 166 || calcPressure < 945) {
         classification = 'Extremely Severe Cyclonic Storm';
         riskLevel = 'Very High';
-      } else if (windSpeed >= 118 || atmosphericPressure <= 965) {
+      } else if (calcSpeed >= 118 || calcPressure <= 965) {
         classification = 'Very Severe Cyclonic Storm';
         riskLevel = 'High';
-      } else if (windSpeed >= 89 || atmosphericPressure <= 980) {
+      } else if (calcSpeed >= 89 || calcPressure <= 980) {
         classification = 'Severe Cyclonic Storm';
         riskLevel = 'High';
-      } else if (windSpeed >= 62 || atmosphericPressure <= 992) {
+      } else if (calcSpeed >= 62 || calcPressure <= 992) {
         classification = 'Cyclonic Storm';
         riskLevel = 'Moderate';
       } else {
@@ -399,25 +506,38 @@ CRITICAL: If the image is a person, superhero/comic character (like Spider-Man),
         riskLevel = 'Moderate';
       }
 
-      const developmentStage = (seaSurfaceTemperature >= 28.5 && atmosphericPressure <= 975)
+      const developmentStage = (calcSST >= 28.5 && calcPressure <= 975)
         ? 'Intensifying'
+        : calcSpeed < 45
+        ? 'Dissipating'
         : 'Steady';
 
-      const movement = computeCycloneMovement(body.windDirection || 285, body.latitude || 15.2, body.longitude || 82.4, true);
+      const movement = computeCycloneMovement(body.windDirection || 285, body.latitude || 15.2, body.longitude || 82.4, isProbableCyclone);
 
       res.json({
-        cycloneDetected: true,
+        cycloneDetected: isProbableCyclone,
         classification,
-        predictedWindSpeed: Math.round(windSpeed),
-        confidence: 87,
+        predictedWindSpeed: calcSpeed,
+        confidence: 88,
         developmentStage,
         riskLevel,
         movementDirection: movement.movementDirection,
         movementDegree: movement.movementDegree,
         forwardSpeed: movement.forwardSpeed,
         estimatedLandfall: movement.estimatedLandfall,
-        summaryExplanation: `Current environmental conditions indicate a strengthening cyclone pattern tracking ${movement.movementDirection} (${movement.movementDegree}°) at ${movement.forwardSpeed} km/h towards ${movement.estimatedLandfall}.`,
-        intensityHistory: computeIntensityHistory(Math.round(windSpeed), developmentStage),
+        parameters: {
+          windSpeed: calcSpeed,
+          atmosphericPressure: calcPressure,
+          seaSurfaceTemperature: calcSST,
+          rainfall: calcRain,
+          windDirection: movement.movementDegree,
+          latitude: body.latitude || 15.2,
+          longitude: body.longitude || 82.4,
+        },
+        summaryExplanation: isProbableCyclone
+          ? `Analysis indicates a ${classification} pattern tracking ${movement.movementDirection} (${movement.movementDegree}°) at ${movement.forwardSpeed} km/h towards ${movement.estimatedLandfall}.`
+          : 'Atmospheric boundary telemetry shows normal non-cyclonic conditions.',
+        intensityHistory: computeIntensityHistory(calcSpeed, developmentStage),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isDemo: true,
       });

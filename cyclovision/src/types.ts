@@ -32,6 +32,7 @@ export interface PredictionResult {
   movementDegree?: number; // Azimuth degree heading 0-360
   forwardSpeed?: number; // Forward translation speed in km/h
   estimatedLandfall?: string; // Estimated landfall location and timeframe
+  parameters?: EnvironmentalParameters; // Image-specific atmospheric parameters
 }
 
 export interface PredictionInput {
@@ -51,6 +52,7 @@ export interface SatelliteImageItem {
   dataUrl: string;
   name: string;
   size?: number;
+  parameters?: EnvironmentalParameters;
 }
 
 export interface ImagePredictionItem {
@@ -58,6 +60,7 @@ export interface ImagePredictionItem {
   imageName: string;
   dataUrl: string;
   prediction: PredictionResult;
+  parameters?: EnvironmentalParameters; // Image-specific atmospheric parameters
 }
 
 export interface ComparisonSummary {

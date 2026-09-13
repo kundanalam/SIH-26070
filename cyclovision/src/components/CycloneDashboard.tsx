@@ -187,11 +187,16 @@ export default function CycloneDashboard({
       <div className="bg-white rounded-2xl border border-[#EBE4D8] p-6 sm:p-7 shadow-[0_4px_25px_rgba(45,35,32,0.04)]">
         <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
           <div>
-            <h3 className="text-base font-bold text-[#2D2320]">
-              Cyclone Parameters
+            <h3 className="text-base font-bold text-[#2D2320] flex flex-wrap items-center gap-2">
+              <span>Cyclone Parameters</span>
+              {activeImageName && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-[#FFF0EC] text-[#FF654E] border border-[#FFD9CF] truncate max-w-[280px]" title={activeImageName}>
+                  {activeImageName}
+                </span>
+              )}
             </h3>
             <p className="text-xs text-[#7D7068]">
-              Meteorological boundary layer variables & translation telemetry
+              Individual meteorological boundary layer variables & translation telemetry for this active image
             </p>
           </div>
           <span className="text-xs font-semibold text-[#8C7E76]">

@@ -183,6 +183,32 @@ export default function MultiImageComparison({
                           : 'Stationary'}
                       </span>
                     </div>
+
+                    {/* Image-Specific Environmental Parameters */}
+                    {(item.parameters || pred.parameters) && (
+                      <div className="grid grid-cols-3 gap-1 py-1.5 px-2 rounded-lg bg-white/90 border border-[#EAE2D5] text-[10px] mt-2">
+                        <div className="text-center">
+                          <span className="text-[#8C7E76] block text-[9px] uppercase font-semibold">Pressure</span>
+                          <span className="font-bold text-[#2D2320]">
+                            {(item.parameters || pred.parameters)?.atmosphericPressure}{' '}
+                            <span className="text-[8px] font-normal text-[#7D7068]">hPa</span>
+                          </span>
+                        </div>
+                        <div className="text-center border-x border-[#EAE2D5]">
+                          <span className="text-[#8C7E76] block text-[9px] uppercase font-semibold">SST</span>
+                          <span className="font-bold text-[#2D2320]">
+                            {(item.parameters || pred.parameters)?.seaSurfaceTemperature}°C
+                          </span>
+                        </div>
+                        <div className="text-center">
+                          <span className="text-[#8C7E76] block text-[9px] uppercase font-semibold">Rainfall</span>
+                          <span className="font-bold text-[#2D2320]">
+                            {(item.parameters || pred.parameters)?.rainfall}{' '}
+                            <span className="text-[8px] font-normal text-[#7D7068]">mm/h</span>
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Brief finding */}

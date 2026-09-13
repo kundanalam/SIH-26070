@@ -6,12 +6,14 @@ interface EnvironmentalInputsProps {
   parameters: EnvironmentalParameters;
   onChange: (key: keyof EnvironmentalParameters, value: number) => void;
   onLoadSampleData: () => void;
+  activeImageName?: string;
 }
 
 export default function EnvironmentalInputs({
   parameters,
   onChange,
   onLoadSampleData,
+  activeImageName,
 }: EnvironmentalInputsProps) {
   const handleInputChange = (key: keyof EnvironmentalParameters) => (
     e: ChangeEvent<HTMLInputElement>
@@ -106,11 +108,16 @@ export default function EnvironmentalInputs({
             <Sliders className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-[#2D2320]">
-              Environmental Parameters
+            <h3 className="text-base font-bold text-[#2D2320] flex flex-wrap items-center gap-2">
+              <span>Environmental Parameters</span>
+              {activeImageName && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-[#FFF0EC] text-[#FF654E] border border-[#FFD9CF] truncate max-w-[200px]" title={activeImageName}>
+                  {activeImageName}
+                </span>
+              )}
             </h3>
             <p className="text-xs text-[#7D7068]">
-              Multi-source meteorological readings to supplement satellite imagery
+              Multi-source meteorological readings for the active satellite image
             </p>
           </div>
         </div>

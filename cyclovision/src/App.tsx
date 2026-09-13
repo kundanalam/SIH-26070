@@ -7,13 +7,16 @@ import CycloneDashboard from './components/CycloneDashboard';
 import Footer from './components/Footer';
 import { 
   EnvironmentalParameters, 
-  PredictionResult,
+  PredictionResult, 
   SatelliteImageItem,
   MultiPredictionResult
 } from './types';
 import { 
   SAMPLE_ENVIRONMENTAL_PARAMETERS, 
   SAMPLE_COMPARISON_SET,
+  SAMPLE_PARAMETERS_SEVERE,
+  SAMPLE_PARAMETERS_DEPRESSION,
+  SAMPLE_PARAMETERS_CLEAR_OCEAN,
   predictCycloneBatch 
 } from './services/cyclonePrediction';
 
@@ -22,6 +25,13 @@ export default function App() {
   const [images, setImages] = useState<SatelliteImageItem[]>(SAMPLE_COMPARISON_SET);
   const [selectedImageId, setSelectedImageId] = useState<string>(SAMPLE_COMPARISON_SET[0].id);
   const [parameters, setParameters] = useState<EnvironmentalParameters>(SAMPLE_ENVIRONMENTAL_PARAMETERS);
+
+  // Per-image parameter storage to ensure multiple cyclones each have their own distinct parameters
+  const [parametersMap, setParametersMap] = useState<Record<string, EnvironmentalParameters>>({
+    'sample-1': SAMPLE_PARAMETERS_SEVERE,
+    'sample-2': SAMPLE_PARAMETERS_DEPRESSION,
+    'sample-3': SAMPLE_PARAMETERS_CLEAR_OCEAN,
+  });
 
   // Prediction state
   const [isPredicting, setIsPredicting] = useState<boolean>(false);
@@ -34,14 +44,20 @@ export default function App() {
         imageId: 'sample-1',
         imageName: 'INSAT-3D_Severe_Cyclone_Vortex.svg',
         dataUrl: SAMPLE_COMPARISON_SET[0].dataUrl,
+        parameters: SAMPLE_PARAMETERS_SEVERE,
         prediction: {
           cycloneDetected: true,
           classification: 'Very Severe Cyclonic Storm',
           predictedWindSpeed: 145,
-          confidence: 91,
+          confidence: 94,
           developmentStage: 'Intensifying',
           riskLevel: 'High',
-          summaryExplanation: 'Dense overcast eyewall with high-velocity spiral rainbands detected. Favorable thermodynamic conditions indicate high intensity.',
+          movementDirection: 'North-Northwest (NNW)',
+          movementDegree: 335,
+          forwardSpeed: 19,
+          estimatedLandfall: 'Puri / Paradip Coast, Odisha (~24-30h)',
+          parameters: SAMPLE_PARAMETERS_SEVERE,
+          summaryExplanation: 'Dense overcast eyewall with high-velocity spiral rainbands detected. Vortex is tracking North-Northwest (335°) at 19 km/h under favorable subtropical ridge steering.',
           intensityHistory: [
             { time: 'T-18h', windSpeed: 109 },
             { time: 'T-12h', windSpeed: 122 },
@@ -59,6 +75,7 @@ export default function App() {
         imageId: 'sample-2',
         imageName: 'INSAT-3D_Tropical_Depression.svg',
         dataUrl: SAMPLE_COMPARISON_SET[1].dataUrl,
+        parameters: SAMPLE_PARAMETERS_DEPRESSION,
         prediction: {
           cycloneDetected: true,
           classification: 'Tropical Depression (Low Intensity)',
@@ -66,15 +83,20 @@ export default function App() {
           confidence: 86,
           developmentStage: 'Steady',
           riskLevel: 'Moderate',
-          summaryExplanation: 'A developing tropical depression is visible with moderate convective rainbands, but without an organized storm eye.',
+          movementDirection: 'West-Northwest (WNW)',
+          movementDegree: 290,
+          forwardSpeed: 14,
+          estimatedLandfall: 'South Odisha & North Andhra Coast (~32-40h)',
+          parameters: SAMPLE_PARAMETERS_DEPRESSION,
+          summaryExplanation: 'A developing tropical depression is visible with moderate convective rainbands, tracking West-Northwest (290°) at 14 km/h without an organized storm eye.',
           intensityHistory: [
-            { time: 'T-18h', windSpeed: 37 },
+            { time: 'T-18h', windSpeed: 38 },
             { time: 'T-12h', windSpeed: 42 },
             { time: 'T-6h', windSpeed: 45 },
             { time: 'Present', windSpeed: 48 },
             { time: 'T+6h', windSpeed: 50, isProjected: true },
             { time: 'T+12h', windSpeed: 52, isProjected: true },
-            { time: 'T+24h', windSpeed: 54, isProjected: true },
+            { time: 'T+24h', windSpeed: 55, isProjected: true },
           ],
           timestamp: 'Initial Demo',
           isDemo: true,
@@ -84,6 +106,7 @@ export default function App() {
         imageId: 'sample-3',
         imageName: 'INSAT-3D_Calm_Ocean_No_Cyclone.svg',
         dataUrl: SAMPLE_COMPARISON_SET[2].dataUrl,
+        parameters: SAMPLE_PARAMETERS_CLEAR_OCEAN,
         prediction: {
           cycloneDetected: false,
           classification: 'No Cyclone / Calm Ocean',
@@ -91,6 +114,11 @@ export default function App() {
           confidence: 98,
           developmentStage: 'Dissipating',
           riskLevel: 'Low',
+          movementDirection: 'Stationary / No Cyclonic Track',
+          movementDegree: 0,
+          forwardSpeed: 0,
+          estimatedLandfall: 'None (No active cyclonic circulation)',
+          parameters: SAMPLE_PARAMETERS_CLEAR_OCEAN,
           summaryExplanation: 'No organized tropical vortex or cyclonic circulation detected. Satellite imagery shows clear ocean waters with sparse non-convective clouds.',
           intensityHistory: [
             { time: 'T-18h', windSpeed: 14 },
@@ -122,6 +150,18 @@ export default function App() {
   const analyzeRef = useRef<HTMLDivElement>(null);
   const dashboardRef = useRef<HTMLDivElement>(null);
 
+  // Derived active parameters for the currently selected image
+  const activeParameters = useMemo<EnvironmentalParameters>(() => {
+    if (selectedImageId && parametersMap[selectedImageId]) {
+      return parametersMap[selectedImageId];
+    }
+    const item = multiPrediction?.items.find((it) => it.imageId === selectedImageId);
+    if (item?.parameters) {
+      return item.parameters;
+    }
+    return parameters;
+  }, [selectedImageId, parametersMap, multiPrediction, parameters]);
+
   // Derived map of predictions by image id
   const predictionMap = useMemo<Record<string, PredictionResult>>(() => {
     if (!multiPrediction) return {};
@@ -147,10 +187,30 @@ export default function App() {
       ...prev,
       [key]: value,
     }));
+    if (selectedImageId) {
+      setParametersMap((prev) => ({
+        ...prev,
+        [selectedImageId]: {
+          ...(prev[selectedImageId] || activeParameters),
+          [key]: value,
+        },
+      }));
+    }
   };
 
   const handleLoadSampleData = () => {
-    setParameters(SAMPLE_ENVIRONMENTAL_PARAMETERS);
+    setParametersMap({
+      'sample-1': SAMPLE_PARAMETERS_SEVERE,
+      'sample-2': SAMPLE_PARAMETERS_DEPRESSION,
+      'sample-3': SAMPLE_PARAMETERS_CLEAR_OCEAN,
+    });
+    if (selectedImageId === 'sample-2') {
+      setParameters(SAMPLE_PARAMETERS_DEPRESSION);
+    } else if (selectedImageId === 'sample-3') {
+      setParameters(SAMPLE_PARAMETERS_CLEAR_OCEAN);
+    } else {
+      setParameters(SAMPLE_PARAMETERS_SEVERE);
+    }
   };
 
   const handleAddImages = (newImages: SatelliteImageItem[]) => {
@@ -160,6 +220,27 @@ export default function App() {
     });
     if (newImages.length > 0) {
       setSelectedImageId(newImages[0].id);
+      // Initialize default parameters for newly added images
+      newImages.forEach((img, idx) => {
+        if (img.parameters) {
+          setParametersMap((prev) => ({ ...prev, [img.id]: img.parameters! }));
+        } else {
+          // Provide distinct starting parameters for each uploaded image
+          const speed = Math.max(50, Math.min(170, Math.round(135 - idx * 35)));
+          setParametersMap((prev) => ({
+            ...prev,
+            [img.id]: {
+              windSpeed: speed,
+              atmosphericPressure: Math.round(1012 - Math.pow(speed / 3.4, 1.15)),
+              seaSurfaceTemperature: Number((27.5 + (speed / 180) * 2.8).toFixed(1)),
+              rainfall: Math.round(speed * 0.9),
+              windDirection: (280 + idx * 25) % 360,
+              latitude: Number((14.0 + idx * 1.8).toFixed(1)),
+              longitude: Number((84.5 - idx * 2.0).toFixed(1)),
+            },
+          }));
+        }
+      });
     }
   };
 
@@ -209,10 +290,19 @@ export default function App() {
   const handleLoadComparisonSet = () => {
     setImages(SAMPLE_COMPARISON_SET);
     setSelectedImageId(SAMPLE_COMPARISON_SET[0].id);
+    setParametersMap({
+      'sample-1': SAMPLE_PARAMETERS_SEVERE,
+      'sample-2': SAMPLE_PARAMETERS_DEPRESSION,
+      'sample-3': SAMPLE_PARAMETERS_CLEAR_OCEAN,
+    });
+    setParameters(SAMPLE_PARAMETERS_SEVERE);
   };
 
   const handleSelectImage = (id: string) => {
     setSelectedImageId(id);
+    if (parametersMap[id]) {
+      setParameters(parametersMap[id]);
+    }
   };
 
   const handlePredict = async () => {
@@ -223,15 +313,25 @@ export default function App() {
 
     try {
       // Imagery analysis step
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 450));
       setPredictionStep('Validating multi-source satellite rainbands & eye convection...');
 
       // Atmospheric feature analysis step
-      await new Promise((r) => setTimeout(r, 600));
-      setPredictionStep('Calculating wind speed gradients & intensity differences...');
+      await new Promise((r) => setTimeout(r, 450));
+      setPredictionStep('Calculating independent wind speed gradients & pressure dynamics...');
 
-      // Run batch prediction across all uploaded images
-      const result = await predictCycloneBatch(images, parameters);
+      // Run batch prediction with individual parameters per image
+      const result = await predictCycloneBatch(images, activeParameters, parametersMap);
+
+      // Sync computed parameters into parametersMap
+      const newMap = { ...parametersMap };
+      result.items.forEach((it) => {
+        if (it.parameters) {
+          newMap[it.imageId] = it.parameters;
+        }
+      });
+      setParametersMap(newMap);
+
       setMultiPrediction(result);
       setSelectedImageId(result.selectedImageId);
     } catch (err) {
@@ -306,11 +406,12 @@ export default function App() {
           predictionMap={predictionMap}
         />
 
-        {/* STEP 2: ENVIRONMENTAL PARAMETERS (COMPACT SECTION) */}
+        {/* STEP 2: ENVIRONMENTAL PARAMETERS (CONNECTED TO ACTIVE IMAGE) */}
         <EnvironmentalInputs
-          parameters={parameters}
+          parameters={activeParameters}
           onChange={handleParameterChange}
           onLoadSampleData={handleLoadSampleData}
+          activeImageName={activeImageItem?.name}
         />
 
         {/* STEP 3 & 4: PREDICTION RESULT CARD (OR LOADING ANIMATION) */}
@@ -327,7 +428,7 @@ export default function App() {
           <div ref={dashboardRef}>
             <CycloneDashboard
               prediction={activePrediction}
-              parameters={parameters}
+              parameters={activeParameters}
               multiPrediction={multiPrediction}
               selectedImageId={selectedImageId}
               onSelectImage={handleSelectImage}
