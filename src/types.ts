@@ -6,10 +6,28 @@ export interface EnvironmentalParameters {
   latitude: number; // degrees N
   longitude: number; // degrees E
   rainfall: number; // mm
+  coreType?: string; // 'Warm-core' | 'Cold-core' | 'Convective Updraft' | 'Stable / Non-Cyclonic'
+  systemStructure?: string; // 'Massive Symmetric Spiral' | 'Frontal Comma System' | 'Compact Polar Low' | 'Local Thunderstorm Mesocyclone' | 'Diffuse / Clear Sky'
 }
 
 export type DevelopmentStage = 'Intensifying' | 'Steady' | 'Weakening' | 'Dissipating';
 export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Very High';
+
+export type CycloneTypeCategory = 
+  | 'Tropical Cyclone' 
+  | 'Extratropical (Mid-Latitude) Cyclone' 
+  | 'Polar Cyclone' 
+  | 'Mesocyclone'
+  | 'None (Non-Cyclonic)';
+
+export interface CycloneTypeAnalysis {
+  cycloneType: CycloneTypeCategory;
+  locationLatitude: string;
+  energySource: string;
+  sizeAndStructure: string;
+  reasoning: string[];
+  safetyInfoNote: string;
+}
 
 export interface IntensityDataPoint {
   time: string;
@@ -32,7 +50,9 @@ export interface PredictionResult {
   movementDegree?: number; // Azimuth degree heading 0-360
   forwardSpeed?: number; // Forward translation speed in km/h
   estimatedLandfall?: string; // Estimated landfall location and timeframe
+  pressureDeficit?: number; // Ambient vs core pressure deficit (hPa)
   parameters?: EnvironmentalParameters; // Image-specific atmospheric parameters
+  cycloneTypeAnalysis?: CycloneTypeAnalysis; // 3-feature classification analysis
 }
 
 export interface PredictionInput {
@@ -45,6 +65,8 @@ export interface PredictionInput {
   latitude: number;
   longitude: number;
   rainfall: number;
+  coreType?: string;
+  systemStructure?: string;
 }
 
 export interface SatelliteImageItem {

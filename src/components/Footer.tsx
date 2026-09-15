@@ -1,7 +1,7 @@
 export default function Footer() {
   return (
     <footer id="main-footer" className="mt-20 border-t border-[#EAE0D2] bg-[#F4EFE6]/60 py-10">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center space-y-3">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-3">
         <div className="flex items-center justify-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-[#FF654E]"></span>
           <span className="text-lg font-bold tracking-tight text-[#2D2320]">

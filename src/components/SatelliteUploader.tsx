@@ -9,9 +9,11 @@ import {
   AlertTriangle, 
   Layers, 
   ShieldCheck,
-  ShieldAlert 
+  ShieldAlert,
+  Sparkles 
 } from 'lucide-react';
 import { SatelliteImageItem, PredictionResult } from '../types';
+import { ALL_BENCHMARK_SAMPLES, BenchmarkSample } from '../services/cyclonePrediction';
 
 interface SatelliteUploaderProps {
   images: SatelliteImageItem[];
@@ -24,6 +26,7 @@ interface SatelliteUploaderProps {
   onPredict: () => void;
   isPredicting: boolean;
   predictionMap?: Record<string, PredictionResult>;
+  onLoadBenchmark?: (sample: BenchmarkSample) => void;
 }
 
 export default function SatelliteUploader({
@@ -37,6 +40,7 @@ export default function SatelliteUploader({
   onPredict,
   isPredicting,
   predictionMap = {},
+  onLoadBenchmark,
 }: SatelliteUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -161,6 +165,38 @@ export default function SatelliteUploader({
                 <CheckCircle2 className="w-3.5 h-3.5" /> Ready
               </span>
             )}
+          </div>
+        </div>
+
+        {/* Quick Benchmark Preset Strip */}
+        <div className="mb-5 p-3 rounded-xl bg-[#FAF7F2] border border-[#EAE2D5]">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <span className="text-[11px] font-bold text-[#5C4F48] uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#FF654E]" />
+              Quick Archetype Presets (1-Click Test & Verify)
+            </span>
+            <button
+              type="button"
+              onClick={onLoadComparisonSet}
+              className="text-[11px] font-bold text-[#FF654E] hover:underline cursor-pointer"
+            >
+              + Load 3-Image Comparison Set
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+            {ALL_BENCHMARK_SAMPLES.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => onLoadBenchmark ? onLoadBenchmark(b) : onLoadComparisonSet()}
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white hover:bg-[#FFEDE8] text-[#2D2320] hover:text-[#D94935] border border-[#E0D7C8] hover:border-[#FFD3C7] transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs"
+                title={`${b.categoryLabel} (${b.cycloneType}) - ${b.parameters.windSpeed} km/h, SST ${b.parameters.seaSurfaceTemperature}°C`}
+              >
+                <span>{b.cycloneType.includes('Tropical') ? '🌀' : b.cycloneType.includes('Extratropical') ? '🌊' : b.cycloneType.includes('Polar') ? '❄️' : b.cycloneType.includes('Meso') ? '🌪️' : '☀️'}</span>
+                <span>{b.categoryLabel.split('(')[0].trim()}</span>
+                <span className="text-[10px] text-[#8C7E76] font-normal">({b.parameters.windSpeed}k)</span>
+              </button>
+            ))}
           </div>
         </div>
 

@@ -8,9 +8,11 @@ import {
   Sparkles,
   Layers,
   Compass,
-  Navigation
+  Navigation,
+  Info
 } from 'lucide-react';
 import { PredictionResult, MultiPredictionResult } from '../types';
+import { evaluateCycloneType } from '../services/cyclonePrediction';
 
 interface PredictionResultCardProps {
   prediction: PredictionResult | null;
@@ -292,6 +294,83 @@ export default function PredictionResultCard({
             </div>
           </div>
         )}
+
+        {/* Cyclone Type (3 Key Features Evaluation: Location, Core Temp, Size/Structure) */}
+        {(() => {
+          const typeAnalysis =
+            prediction.cycloneTypeAnalysis ||
+            evaluateCycloneType(
+              prediction.parameters || {},
+              prediction.classification,
+              prediction.cycloneDetected,
+              activeImageName || ''
+            );
+
+          const isNonCyclonic = typeAnalysis.cycloneType === 'None (Non-Cyclonic)';
+
+          const categoryBadgeStyles: Record<string, string> = {
+            'Tropical Cyclone': 'bg-[#FFF0EC] text-[#FF654E] border-[#FFD9CF]',
+            'Extratropical (Mid-Latitude) Cyclone': 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]',
+            'Polar Cyclone': 'bg-[#F0FDF4] text-[#059669] border-[#BBF7D0]',
+            'Mesocyclone': 'bg-[#FAF5FF] text-[#9333EA] border-[#E9D5FF]',
+            'None (Non-Cyclonic)': 'bg-[#F3F4F6] text-[#4B5563] border-[#E5E7EB]',
+          };
+
+          const badgeClass = categoryBadgeStyles[typeAnalysis.cycloneType] || 'bg-[#F3F4F6] text-[#4B5563] border-[#E5E7EB]';
+
+          return (
+            <div
+              id="cyclone-type-result-box"
+              className={`p-4 sm:p-5 rounded-xl border space-y-3.5 ${
+                isNonCyclonic
+                  ? 'bg-[#FAF8F5] border-[#E8E1D5]'
+                  : 'bg-[#FFF9F7] border-[#FFD9CF]'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EAE2D5] pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#7D7068]">
+                    Cyclone Type:
+                  </span>
+                  <span className={`text-xs sm:text-sm font-extrabold px-2.5 py-0.5 rounded-md border ${badgeClass}`}>
+                    {typeAnalysis.cycloneType}
+                  </span>
+                </div>
+                <span className="text-[11px] text-[#7D7068] font-semibold">
+                  Evaluated from Location, Core Temp & Size/Structure
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <strong className="text-xs font-bold text-[#2D2320] block">
+                  Reasoning:
+                </strong>
+                <ul className="space-y-1.5 text-xs text-[#4A3E38]">
+                  {typeAnalysis.reasoning.map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${isNonCyclonic ? 'bg-[#7D7068]' : 'bg-[#FF654E]'}`} />
+                      <span className="leading-relaxed">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="p-3 rounded-lg bg-white border border-[#EAE2D5] text-xs text-[#4A3E38] flex items-start gap-2.5">
+                {isNonCyclonic ? (
+                  <Info className="w-4 h-4 text-[#7D7068] shrink-0 mt-0.5" />
+                ) : (
+                  <ShieldAlert className="w-4 h-4 text-[#FF654E] shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <strong className={`font-bold mr-1 ${isNonCyclonic ? 'text-[#4B5563]' : 'text-[#FF654E]'}`}>
+                    Safety/Info Note:
+                  </strong>
+                  <span>{typeAnalysis.safetyInfoNote}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Prototype Scientific Notice */}
         <div className="p-3.5 rounded-xl bg-[#FFF9F7] border border-[#FFD9CF] text-xs text-[#805045] flex items-start gap-2.5">

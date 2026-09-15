@@ -45,7 +45,7 @@ export default function EnvironmentalInputs({
       label: 'Sea Surface Temperature',
       unit: '°C',
       step: '0.1',
-      min: 15,
+      min: -2,
       max: 38,
       description: 'Thermal energy potential',
     },

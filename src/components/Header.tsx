@@ -1,22 +1,30 @@
+export type AppViewMode = 'command' | 'comparison' | 'taxonomy' | 'dossier';
+
 interface HeaderProps {
   onNavigateToAnalyze: () => void;
   onNavigateToDashboard: () => void;
   hasPrediction: boolean;
+  activeViewMode: AppViewMode;
+  onSelectViewMode: (mode: AppViewMode) => void;
+  hasMultipleImages?: boolean;
 }
 
 export default function Header({
   onNavigateToAnalyze,
   onNavigateToDashboard,
   hasPrediction,
+  activeViewMode,
+  onSelectViewMode,
+  hasMultipleImages = false,
 }: HeaderProps) {
   return (
-    <header id="main-header" className="sticky top-0 z-40 bg-[#F8F5EE]/90 backdrop-blur-md border-b border-[#EADFCF]">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 h-18 flex items-center justify-between">
+    <header id="main-header" className="sticky top-0 z-40 bg-[#F8F5EE]/95 backdrop-blur-md border-b border-[#EADFCF]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between gap-4">
         {/* Left branding */}
         <div 
           id="header-brand" 
           onClick={onNavigateToAnalyze}
-          className="flex flex-col cursor-pointer select-none group"
+          className="flex flex-col cursor-pointer select-none group shrink-0"
         >
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#FF654E] transition-transform group-hover:scale-125 duration-200"></span>
@@ -29,30 +37,61 @@ export default function Header({
           </span>
         </div>
 
-        {/* Right nav buttons */}
-        <nav id="header-navigation" className="flex items-center gap-2 sm:gap-3">
+        {/* Center / Right operational view tabs */}
+        <nav id="header-navigation" className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-1">
           <button
-            id="nav-btn-analyze"
+            id="view-tab-command"
             type="button"
-            onClick={onNavigateToAnalyze}
-            className="px-4 py-2 text-sm font-semibold rounded-lg text-[#2D2320] hover:text-[#FF654E] hover:bg-white/80 transition-all duration-150"
-          >
-            Analyze
-          </button>
-          <button
-            id="nav-btn-dashboard"
-            type="button"
-            onClick={onNavigateToDashboard}
-            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 ${
-              hasPrediction
-                ? 'bg-[#FF654E] text-white hover:bg-[#E8553F] shadow-sm'
-                : 'text-[#61544E] hover:text-[#2D2320] hover:bg-white/80'
+            onClick={() => onSelectViewMode('command')}
+            className={`px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-150 cursor-pointer whitespace-nowrap ${
+              activeViewMode === 'command'
+                ? 'bg-[#FF654E] text-white shadow-xs'
+                : 'text-[#5C4F48] hover:text-[#2D2320] hover:bg-white/80'
             }`}
           >
-            Dashboard
-            {hasPrediction && (
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+            Command Center
+          </button>
+
+          <button
+            id="view-tab-comparison"
+            type="button"
+            onClick={() => onSelectViewMode('comparison')}
+            className={`px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-150 cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              activeViewMode === 'comparison'
+                ? 'bg-[#FF654E] text-white shadow-xs'
+                : 'text-[#5C4F48] hover:text-[#2D2320] hover:bg-white/80'
+            }`}
+          >
+            Comparative View
+            {hasMultipleImages && (
+              <span className="w-2 h-2 rounded-full bg-[#FF654E] animate-pulse"></span>
             )}
+          </button>
+
+          <button
+            id="view-tab-taxonomy"
+            type="button"
+            onClick={() => onSelectViewMode('taxonomy')}
+            className={`px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-150 cursor-pointer whitespace-nowrap ${
+              activeViewMode === 'taxonomy'
+                ? 'bg-[#FF654E] text-white shadow-xs'
+                : 'text-[#5C4F48] hover:text-[#2D2320] hover:bg-white/80'
+            }`}
+          >
+            Taxonomy Matrix
+          </button>
+
+          <button
+            id="view-tab-dossier"
+            type="button"
+            onClick={() => onSelectViewMode('dossier')}
+            className={`px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-150 cursor-pointer whitespace-nowrap ${
+              activeViewMode === 'dossier'
+                ? 'bg-[#FF654E] text-white shadow-xs'
+                : 'text-[#5C4F48] hover:text-[#2D2320] hover:bg-white/80'
+            }`}
+          >
+            Full Dossier
           </button>
         </nav>
       </div>

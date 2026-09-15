@@ -5,7 +5,9 @@ import {
   IntensityDataPoint, 
   SatelliteImageItem, 
   ImagePredictionItem, 
-  MultiPredictionResult 
+  MultiPredictionResult,
+  CycloneTypeAnalysis,
+  CycloneTypeCategory
 } from '../types';
 
 export const SAMPLE_ENVIRONMENTAL_PARAMETERS: EnvironmentalParameters = {
@@ -110,6 +112,153 @@ export function computeCycloneMovement(
     movementDegree: heading,
     forwardSpeed,
     estimatedLandfall,
+  };
+}
+
+/**
+ * Evaluates the 3 key meteorological features to classify a cyclone into one of the 4 standard categories:
+ * 1. Location / Latitude (Where it formed: Tropical 0°-30°, Mid-latitude 30°-60°, Polar >60°, or Local convective scale)
+ * 2. Energy Source / Core Temperature (Warm-core vs. Cold-core vs. Convective Updraft)
+ * 3. Size and Structure (Massive symmetric spiral vs. Frontal boundaries vs. Compact polar low vs. Local thunderstorm mesocyclone)
+ */
+export function evaluateCycloneType(
+  parameters: {
+    latitude?: number;
+    seaSurfaceTemperature?: number;
+    windSpeed?: number;
+    atmosphericPressure?: number;
+    coreType?: string;
+    systemStructure?: string;
+  },
+  classification: string = '',
+  cycloneDetected: boolean = true,
+  imageName: string = ''
+): CycloneTypeAnalysis {
+  const lowerName = (imageName || '').toLowerCase();
+  const lowerClass = (classification || '').toLowerCase();
+  const lat = Math.abs(parameters.latitude !== undefined ? parameters.latitude : 15.2);
+  const sst = parameters.seaSurfaceTemperature !== undefined ? parameters.seaSurfaceTemperature : 28.5;
+  const speed = parameters.windSpeed !== undefined ? parameters.windSpeed : 45;
+  const pressure = parameters.atmosphericPressure !== undefined ? parameters.atmosphericPressure : 995;
+  const coreType = parameters.coreType;
+  const structure = parameters.systemStructure;
+
+  // 0. Non-Cyclonic Detection:
+  // When no cyclonic circulation exists, or calm ocean, clear sky, non-meteorological image, or low ambient winds without vortex
+  const isNonCyclonic =
+    !cycloneDetected ||
+    coreType === 'Stable / Non-Cyclonic' ||
+    structure === 'Diffuse / Clear Sky' ||
+    lowerClass.includes('no cyclone') ||
+    lowerClass.includes('calm') ||
+    lowerClass.includes('non-cyclonic') ||
+    lowerClass.includes('non-meteorological') ||
+    lowerClass.includes('diffuse') ||
+    lowerClass.includes('clear') ||
+    lowerName.includes('calm') ||
+    lowerName.includes('clear') ||
+    lowerName.includes('no_cyclone') ||
+    (speed < 38 && !coreType && !structure && !lowerClass.includes('cyclon'));
+
+  if (isNonCyclonic) {
+    return {
+      cycloneType: 'None (Non-Cyclonic)',
+      locationLatitude: `Observed at ${lat.toFixed(1)}° latitude under quiescent atmospheric conditions without vortex organization.`,
+      energySource: 'Stable ambient boundary layer without organized core thermodynamic latent heating or baroclinic temperature gradients.',
+      sizeAndStructure: 'Diffuse non-convective cloud cover or clear skies lacking cyclonic rotation, spiral rainbands, or an eyewall.',
+      reasoning: [
+        `Location/Latitude: Latitude ${lat.toFixed(1)}° exhibits calm background flow without vortex initiation.`,
+        `Energy Source/Core Temperature: Ambient thermal conditions and balanced atmospheric pressure (${pressure} hPa) maintain stability without cyclogenesis.`,
+        `Size and Structure: No organized eyewall, spiral rainbands, frontal boundaries, or mesocyclone rotation present.`
+      ],
+      safetyInfoNote: 'Normal atmospheric and maritime conditions prevail; monitor coastal marine weather bulletins for routine updates.'
+    };
+  }
+
+  // 1. Mesocyclone: Local severe thunderstorm scale (2-10 km), high shear, tornadic supercell
+  if (
+    structure === 'Local Thunderstorm Mesocyclone' ||
+    coreType === 'Convective Updraft' ||
+    lowerName.includes('meso') || 
+    lowerClass.includes('meso') || 
+    lowerName.includes('supercell') || 
+    lowerClass.includes('tornado')
+  ) {
+    return {
+      cycloneType: 'Mesocyclone',
+      locationLatitude: `Formed inland within severe convective corridors (${lat.toFixed(1)}° latitude) during strong frontal boundaries.`,
+      energySource: 'Driven by intense buoyant convective updrafts (high CAPE) interacting with strong vertical environmental wind shear.',
+      sizeAndStructure: 'Local thunderstorm scale (2–10 km diameter), forming a deep persistently rotating updraft inside a parent supercell.',
+      reasoning: [
+        `Location/Latitude: Localized continental system at ${lat.toFixed(1)}° latitude along severe frontal collision zones.`,
+        `Energy Source/Core Temperature: Intense thermodynamic updraft powered by boundary-layer heating and strong directional shear rather than oceanic latent heat.`,
+        `Size and Structure: Highly concentrated vortex of 2–10 km diameter embedded in a thunderstorm cloud deck with strong tornadogenesis risk.`
+      ],
+      safetyInfoNote: 'Immediately seek shelter in a sturdy interior room, basement, or lowest floor away from all exterior windows and doors.'
+    };
+  }
+
+  // 2. Polar Cyclone: High latitude (>=55°), cold polar water, compact polar low structure
+  if (
+    structure === 'Compact Polar Low' ||
+    (coreType === 'Cold-core' && (lat >= 50 || sst <= 10)) ||
+    lat >= 55 ||
+    sst <= 10 ||
+    lowerName.includes('polar') ||
+    lowerClass.includes('polar') ||
+    lowerName.includes('arctic')
+  ) {
+    return {
+      cycloneType: 'Polar Cyclone',
+      locationLatitude: `Formed in polar/sub-polar maritime zone at ${lat.toFixed(1)}° latitude (>60°N/S) over high-latitude seas.`,
+      energySource: `Cold-core system driven by intense air-sea heat fluxes and low-level thermodynamic instability when frigid arctic air moves over open polar waters (SST ${sst.toFixed(1)}°C).`,
+      sizeAndStructure: 'Compact maritime vortex (typically 200–600 km diameter) with spiral snow convective bands and rapid developmental spin-up.',
+      reasoning: [
+        `Location/Latitude: Originates poleward of 55°–60° (${lat.toFixed(1)}°N/S) in Arctic or Antarctic maritime corridors.`,
+        `Energy Source/Core Temperature: Cold-core structure aloft fueled by extreme thermal contrast between polar air and relatively warmer ocean waters (SST ${sst.toFixed(1)}°C).`,
+        `Size and Structure: Compact mesoscale cyclonic circulation (200–600 km across) with tight spiral snow bands and swift cyclogenesis.`
+      ],
+      safetyInfoNote: 'Mariners and polar aviation crews must prepare for violent freezing spray, rapid-onset blizzard whiteouts, and perilous sea surface icing.'
+    };
+  }
+
+  // 3. Extratropical (Mid-Latitude) Cyclone: 30° - 55° latitude, cold-core baroclinic, comma-shaped frontal system
+  if (
+    structure === 'Frontal Comma System' ||
+    coreType === 'Cold-core' ||
+    (lat >= 30 && lat < 55) ||
+    (sst < 25.0 && lat >= 22) ||
+    lowerName.includes('extratropical') ||
+    lowerClass.includes('extratropical') ||
+    lowerName.includes('nor_easter') ||
+    lowerName.includes('frontal')
+  ) {
+    return {
+      cycloneType: 'Extratropical (Mid-Latitude) Cyclone',
+      locationLatitude: `Formed in the mid-latitude baroclinic belt at ${lat.toFixed(1)}° latitude (typically 30°–60°N/S).`,
+      energySource: 'Cold-core system driven baroclinically by horizontal temperature gradients between contrasting warm subtropical and cold polar air masses.',
+      sizeAndStructure: 'Massive, asymmetric comma-shaped synoptic system (1000–3000 km across) featuring pronounced warm, cold, and occluded frontal boundaries.',
+      reasoning: [
+        `Location/Latitude: Situated in the temperate mid-latitude jet stream zone (${lat.toFixed(1)}° latitude).`,
+        `Energy Source/Core Temperature: Cold-core thermodynamic profile driven by baroclinic instability across sharp air mass temperature gradients.`,
+        `Size and Structure: Expansive comma cloud pattern (1000–3000 km broad) with distinctive frontal weather zones rather than a symmetric warm eye.`
+      ],
+      safetyInfoNote: 'Secure property against widespread gale-force winds, expect sharp post-frontal temperature drops, and prepare for potential regional river flooding.'
+    };
+  }
+
+  // 4. Tropical Cyclone (Warm ocean waters 5°-30° lat, SST >= 26.5°C, warm-core latent heat engine)
+  return {
+    cycloneType: 'Tropical Cyclone',
+    locationLatitude: `Formed over warm tropical waters in the cyclogenesis zone at ${lat.toFixed(1)}° latitude (typically 5°–30°N/S).`,
+    energySource: `Warm-core system powered by the release of latent heat from condensing water vapor over warm ocean waters (SST ${sst.toFixed(1)}°C ≥ 26.5°C).`,
+    sizeAndStructure: `Massive, symmetric spiral storm (typically 200–1000 km across) featuring a distinct calm central eye, severe eyewall convection, and spiral rainbands without frontal boundaries.`,
+    reasoning: [
+      `Location/Latitude: Formed in tropical ocean waters at ${lat.toFixed(1)}° latitude (within the 5°–30° latitude cyclogenesis belt).`,
+      `Energy Source/Core Temperature: Classic warm-core thermal profile fueled by abundant latent heat release over warm sea surface temperatures (${sst.toFixed(1)}°C).`,
+      `Size and Structure: Massive symmetric cyclonic vortex (~200–800 km diameter) with a defined eye/eyewall structure and curved spiral bands devoid of fronts.`
+    ],
+    safetyInfoNote: 'Evacuate coastal surge zones early, secure loose structures against destructive eyewall winds, and monitor official meteorological bulletins for rapid intensification warnings.'
   };
 }
 
@@ -402,6 +551,18 @@ export async function predictCyclone(input: PredictionInput): Promise<Prediction
     summaryExplanation = `Vortex structure remains stable with balanced thermodynamic flow, tracking ${movement.movementDirection} at ${movement.forwardSpeed} km/h.`;
   }
 
+  const finalCycloneTypeAnalysis = evaluateCycloneType(
+    {
+      latitude,
+      seaSurfaceTemperature,
+      windSpeed: predictedWindSpeed,
+      atmosphericPressure,
+    },
+    classification,
+    cycloneDetected,
+    imageName
+  );
+
   return {
     cycloneDetected,
     classification,
@@ -417,6 +578,16 @@ export async function predictCyclone(input: PredictionInput): Promise<Prediction
     intensityHistory: computeIntensityHistory(predictedWindSpeed, developmentStage),
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     isDemo: true,
+    parameters: {
+      windSpeed: predictedWindSpeed,
+      atmosphericPressure,
+      seaSurfaceTemperature,
+      rainfall,
+      windDirection: movement.movementDegree,
+      latitude,
+      longitude,
+    },
+    cycloneTypeAnalysis: finalCycloneTypeAnalysis,
   };
 }
 
@@ -613,6 +784,143 @@ export const SAMPLE_IMAGE_CLEAR_OCEAN = `data:image/svg+xml;utf8,${encodeURIComp
 </svg>
 `)}`;
 
+/**
+ * Built-in Sample Image 4: Extratropical Cyclone (Mid-Latitude Comma Storm)
+ */
+export const SAMPLE_IMAGE_EXTRATROPICAL = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+  <defs>
+    <linearGradient id="commaStormBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a192f"/>
+      <stop offset="60%" stop-color="#172554"/>
+      <stop offset="100%" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <filter id="extraBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+  </defs>
+
+  <rect width="600" height="600" fill="url(#commaStormBg)"/>
+
+  <!-- Mid-latitude coordinates grid 40°N-50°N -->
+  <g stroke="#ffffff" stroke-opacity="0.12" stroke-width="1" stroke-dasharray="3,3">
+    <line x1="0" y1="150" x2="600" y2="150"/>
+    <line x1="0" y1="300" x2="600" y2="300"/>
+    <line x1="0" y1="450" x2="600" y2="450"/>
+    <line x1="150" y1="0" x2="150" y2="600"/>
+    <line x1="300" y1="0" x2="300" y2="600"/>
+    <line x1="450" y1="0" x2="450" y2="600"/>
+  </g>
+
+  <!-- Large Asymmetric Comma Cloud Head -->
+  <g filter="url(#extraBlur)">
+    <path d="M 220 180 C 120 220, 140 360, 240 380 C 340 400, 420 320, 400 240 C 380 180, 300 160, 220 180 Z" fill="#F8FAFC" opacity="0.85"/>
+    <path d="M 280 370 C 340 420, 390 500, 430 580" fill="none" stroke="#E2E8F0" stroke-width="50" stroke-linecap="round" opacity="0.6"/>
+    <path d="M 380 230 C 440 210, 520 240, 560 300" fill="none" stroke="#CBD5E1" stroke-width="35" stroke-linecap="round" opacity="0.5"/>
+  </g>
+
+  <!-- Cold Front boundary line (blue barbs) -->
+  <path d="M 280 370 Q 350 440 430 580" fill="none" stroke="#3B82F6" stroke-width="3"/>
+  <!-- Warm Front boundary line (red scallops) -->
+  <path d="M 280 370 Q 360 330 480 340" fill="none" stroke="#EF4444" stroke-width="3"/>
+
+  <!-- Low pressure center marker -->
+  <circle cx="270" cy="300" r="16" fill="none" stroke="#EF4444" stroke-width="2"/>
+  <text x="264" y="306" fill="#EF4444" font-family="sans-serif" font-size="16" font-weight="bold">L</text>
+
+  <!-- Metadata -->
+  <g fill="#FFFFFF" font-family="monospace" font-size="11" opacity="0.85">
+    <text x="24" y="32">PROD: GOES-16 MID-LAT GEOCOLOR</text>
+    <text x="24" y="48">COORD: 42.5°N, 68.2°W</text>
+    <text x="24" y="64">TARGET: EXTRATROPICAL COMMA CYCLONE [FRONTAL]</text>
+  </g>
+</svg>
+`)}`;
+
+/**
+ * Built-in Sample Image 5: Polar Cyclone (Arctic Polar Low Vortex)
+ */
+export const SAMPLE_IMAGE_POLAR = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+  <defs>
+    <linearGradient id="polarLowBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#082f49"/>
+      <stop offset="50%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <filter id="polarBlur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <rect width="600" height="600" fill="url(#polarLowBg)"/>
+
+  <!-- Sea ice boundary / snow edge -->
+  <path d="M 0 80 Q 200 120 400 60 T 600 90 L 600 0 L 0 0 Z" fill="#E0F2FE" opacity="0.4"/>
+  <text x="20" y="50" fill="#BAE6FD" font-size="11" font-family="sans-serif">Arctic Sea Ice Sheet</text>
+
+  <!-- Tight, Compact Maritime Polar Vortex (~300 km diameter) -->
+  <g transform="translate(300, 320)" filter="url(#polarBlur)">
+    <path d="M 0 0 C 40 -80, 120 -60, 100 20 C 80 100, -20 120, -80 60 C -140 0, -80 -80, 0 -110" fill="none" stroke="#F0F9FF" stroke-width="28" stroke-linecap="round" opacity="0.8"/>
+    <path d="M 20 20 C -40 80, -110 60, -90 -20 C -70 -100, 20 -110, 90 -50" fill="none" stroke="#BAE6FD" stroke-width="20" stroke-linecap="round" opacity="0.75"/>
+    <circle cx="5" cy="5" r="14" fill="#0369A1" opacity="0.7"/>
+  </g>
+
+  <!-- Frigid core indicator -->
+  <g fill="#38BDF8" font-family="sans-serif" font-size="12" opacity="0.9">
+    <text x="310" y="325" font-weight="bold">❄ COLD CORE</text>
+  </g>
+
+  <!-- Metadata -->
+  <g fill="#FFFFFF" font-family="monospace" font-size="11" opacity="0.85">
+    <text x="24" y="32">PROD: NOAA-20 VIIRS ARCTIC VIS/IR</text>
+    <text x="24" y="48">COORD: 71.0°N, 25.4°E (Barents Sea)</text>
+    <text x="24" y="64">TARGET: POLAR LOW CYCLONE [MESOSCALE VORTEX]</text>
+  </g>
+</svg>
+`)}`;
+
+/**
+ * Built-in Sample Image 6: Mesocyclone (NEXRAD Doppler Radar Supercell Hook Echo)
+ */
+export const SAMPLE_IMAGE_MESOCYCLONE = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+  <defs>
+    <radialGradient id="radarSweep" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#022c22"/>
+      <stop offset="90%" stop-color="#064e3b"/>
+      <stop offset="100%" stop-color="#021c15"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="600" height="600" fill="url(#radarSweep)"/>
+
+  <!-- Radar range rings (25km, 50km, 75km) -->
+  <circle cx="300" cy="300" r="80" fill="none" stroke="#10B981" stroke-width="1" stroke-opacity="0.3"/>
+  <circle cx="300" cy="300" r="160" fill="none" stroke="#10B981" stroke-width="1" stroke-opacity="0.3"/>
+  <circle cx="300" cy="300" r="240" fill="none" stroke="#10B981" stroke-width="1" stroke-opacity="0.3"/>
+  <line x1="300" y1="60" x2="300" y2="540" stroke="#10B981" stroke-width="1" stroke-opacity="0.3"/>
+  <line x1="60" y1="300" x2="540" y2="300" stroke="#10B981" stroke-width="1" stroke-opacity="0.3"/>
+
+  <!-- Supercell Classic Hook Echo (dBZ radar reflectivity) -->
+  <g transform="translate(300, 300)">
+    <path d="M -90 -140 Q 20 -160 80 -100 Q 140 -40 100 40 Q 40 80 -40 50 Z" fill="#22C55E" opacity="0.6"/>
+    <path d="M -50 -100 Q 10 -110 50 -70 Q 90 -20 60 20 Q 20 40 -30 20 Z" fill="#EAB308" opacity="0.8"/>
+    <path d="M -20 -70 Q 20 -80 40 -40 Q 50 0 30 15 Z" fill="#EF4444" opacity="0.9"/>
+    <path d="M 30 15 C 50 40, 40 80, 0 85 C -35 90, -45 55, -20 45" fill="none" stroke="#D946EF" stroke-width="18" stroke-linecap="round"/>
+    <circle cx="5" cy="65" r="12" fill="#FFFFFF" fill-opacity="0.2" stroke="#FFFFFF" stroke-width="2" stroke-dasharray="3,3"/>
+    <text x="25" y="70" fill="#F43F5E" font-family="sans-serif" font-size="12" font-weight="bold">🌪️ MESO</text>
+  </g>
+
+  <!-- Metadata -->
+  <g fill="#FFFFFF" font-family="monospace" font-size="11" opacity="0.85">
+    <text x="24" y="32">PROD: NEXRAD LEVEL-II BASE REFLECTIVITY</text>
+    <text x="24" y="48">SITE: KTLX (Oklahoma City)</text>
+    <text x="24" y="64">TARGET: TORNADIC SUPERCELL MESOCYCLONE [HOOK ECHO]</text>
+  </g>
+</svg>
+`)}`;
+
 export const SAMPLE_PARAMETERS_SEVERE: EnvironmentalParameters = {
   windSpeed: 145,
   seaSurfaceTemperature: 29.8,
@@ -621,6 +929,8 @@ export const SAMPLE_PARAMETERS_SEVERE: EnvironmentalParameters = {
   latitude: 15.2,
   longitude: 82.4,
   rainfall: 140,
+  coreType: 'Warm-core',
+  systemStructure: 'Massive Symmetric Spiral',
 };
 
 export const SAMPLE_PARAMETERS_DEPRESSION: EnvironmentalParameters = {
@@ -631,6 +941,8 @@ export const SAMPLE_PARAMETERS_DEPRESSION: EnvironmentalParameters = {
   latitude: 12.8,
   longitude: 86.4,
   rainfall: 35,
+  coreType: 'Warm-core',
+  systemStructure: 'Massive Symmetric Spiral',
 };
 
 export const SAMPLE_PARAMETERS_CLEAR_OCEAN: EnvironmentalParameters = {
@@ -641,7 +953,119 @@ export const SAMPLE_PARAMETERS_CLEAR_OCEAN: EnvironmentalParameters = {
   latitude: 10.1,
   longitude: 88.0,
   rainfall: 1,
+  coreType: 'Stable / Non-Cyclonic',
+  systemStructure: 'Diffuse / Clear Sky',
 };
+
+export const SAMPLE_PARAMETERS_EXTRATROPICAL: EnvironmentalParameters = {
+  windSpeed: 110,
+  seaSurfaceTemperature: 15.4,
+  atmosphericPressure: 968,
+  windDirection: 60,
+  latitude: 42.5,
+  longitude: -68.2,
+  rainfall: 75,
+  coreType: 'Cold-core',
+  systemStructure: 'Frontal Comma System',
+};
+
+export const SAMPLE_PARAMETERS_POLAR: EnvironmentalParameters = {
+  windSpeed: 95,
+  seaSurfaceTemperature: 3.5,
+  atmosphericPressure: 978,
+  windDirection: 15,
+  latitude: 71.0,
+  longitude: 25.4,
+  rainfall: 40,
+  coreType: 'Cold-core',
+  systemStructure: 'Compact Polar Low',
+};
+
+export const SAMPLE_PARAMETERS_MESOCYCLONE: EnvironmentalParameters = {
+  windSpeed: 165,
+  seaSurfaceTemperature: 21.0,
+  atmosphericPressure: 985,
+  windDirection: 240,
+  latitude: 35.5,
+  longitude: -97.5,
+  rainfall: 90,
+  coreType: 'Convective Updraft',
+  systemStructure: 'Local Thunderstorm Mesocyclone',
+};
+
+export interface BenchmarkSample {
+  id: string;
+  name: string;
+  categoryLabel: string;
+  cycloneType: 'Tropical Cyclone' | 'Extratropical (Mid-Latitude) Cyclone' | 'Polar Cyclone' | 'Mesocyclone' | 'None (Non-Cyclonic)';
+  badgeColor: string;
+  dataUrl: string;
+  parameters: EnvironmentalParameters;
+  description: string;
+}
+
+export const ALL_BENCHMARK_SAMPLES: BenchmarkSample[] = [
+  {
+    id: 'benchmark-tropical-severe',
+    name: 'INSAT-3D_Severe_Cyclone_Vortex.svg',
+    categoryLabel: 'Tropical Cyclone (Severe)',
+    cycloneType: 'Tropical Cyclone',
+    badgeColor: 'bg-[#FFF0EC] text-[#FF654E] border-[#FFD9CF]',
+    dataUrl: SAMPLE_SATELLITE_IMAGE,
+    parameters: SAMPLE_PARAMETERS_SEVERE,
+    description: 'Cat 3-4 warm-core symmetric eyewall vortex over Bay of Bengal (145 km/h, 940 hPa, SST 29.8°C).'
+  },
+  {
+    id: 'benchmark-tropical-depression',
+    name: 'INSAT-3D_Tropical_Depression.svg',
+    categoryLabel: 'Tropical Cyclone (Depression)',
+    cycloneType: 'Tropical Cyclone',
+    badgeColor: 'bg-[#FFF0EC] text-[#E8553F] border-[#FFD9CF]',
+    dataUrl: SAMPLE_IMAGE_DEPRESSION,
+    parameters: SAMPLE_PARAMETERS_DEPRESSION,
+    description: 'Developing tropical depression with loose cyclonic spiral bands (48 km/h, 996 hPa, SST 28.2°C).'
+  },
+  {
+    id: 'benchmark-calm-ocean',
+    name: 'INSAT-3D_Calm_Ocean_No_Cyclone.svg',
+    categoryLabel: 'Non-Cyclonic (Calm Ocean)',
+    cycloneType: 'None (Non-Cyclonic)',
+    badgeColor: 'bg-[#F3F4F6] text-[#4B5563] border-[#E5E7EB]',
+    dataUrl: SAMPLE_IMAGE_CLEAR_OCEAN,
+    parameters: SAMPLE_PARAMETERS_CLEAR_OCEAN,
+    description: 'Quiescent ocean surface with sparse non-rotating fair weather clouds (16 km/h, 1012 hPa).'
+  },
+  {
+    id: 'benchmark-extratropical',
+    name: 'GOES-16_MidLat_Comma_Cyclone.svg',
+    categoryLabel: 'Extratropical Cyclone',
+    cycloneType: 'Extratropical (Mid-Latitude) Cyclone',
+    badgeColor: 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]',
+    dataUrl: SAMPLE_IMAGE_EXTRATROPICAL,
+    parameters: SAMPLE_PARAMETERS_EXTRATROPICAL,
+    description: 'Cold-core mid-latitude comma cloud with active cold and warm fronts at 42.5°N (110 km/h, 968 hPa).'
+  },
+  {
+    id: 'benchmark-polar',
+    name: 'NOAA-20_Arctic_Polar_Low.svg',
+    categoryLabel: 'Polar Cyclone',
+    cycloneType: 'Polar Cyclone',
+    badgeColor: 'bg-[#F0FDF4] text-[#059669] border-[#BBF7D0]',
+    dataUrl: SAMPLE_IMAGE_POLAR,
+    parameters: SAMPLE_PARAMETERS_POLAR,
+    description: 'Compact sub-polar maritime vortex over frigid Arctic waters at 71.0°N (95 km/h, 978 hPa, SST 3.5°C).'
+  },
+  {
+    id: 'benchmark-meso',
+    name: 'NEXRAD_Doppler_Mesocyclone_Hook.svg',
+    categoryLabel: 'Mesocyclone',
+    cycloneType: 'Mesocyclone',
+    badgeColor: 'bg-[#FAF5FF] text-[#9333EA] border-[#E9D5FF]',
+    dataUrl: SAMPLE_IMAGE_MESOCYCLONE,
+    parameters: SAMPLE_PARAMETERS_MESOCYCLONE,
+    description: 'Severe tornadic supercell hook echo with intense rotating updraft (165 km/h, 985 hPa).'
+  },
+];
 
 /**
  * 3-Image Comparison Sample Set
@@ -700,79 +1124,169 @@ export async function predictCycloneBatch(
                           lowerName.includes('super') ||
                           imgItem.dataUrl.includes('eyeHole');
 
+    const isExtratropical = lowerName.includes('extra') ||
+                            lowerName.includes('comma') ||
+                            lowerName.includes('nor_easter') ||
+                            imgItem.dataUrl.includes('commaStormBg');
+
+    const isPolar = lowerName.includes('polar') ||
+                    lowerName.includes('arctic') ||
+                    imgItem.dataUrl.includes('polarLowBg');
+
+    const isMesocyclone = lowerName.includes('meso') ||
+                          lowerName.includes('supercell') ||
+                          lowerName.includes('hook') ||
+                          imgItem.dataUrl.includes('radarSweep');
+
+    // Check if user has explicitly provided or edited parameters for this specific image
+    const userExplicitParams = imageParametersMap?.[imgItem.id] || imgItem.parameters;
+
     let itemParams: EnvironmentalParameters;
     let prediction: PredictionResult;
 
     if (isCalmOcean) {
-      itemParams = { ...SAMPLE_PARAMETERS_CLEAR_OCEAN };
+      itemParams = userExplicitParams ? { ...userExplicitParams } : { ...SAMPLE_PARAMETERS_CLEAR_OCEAN };
+      const cycloneDetected = itemParams.windSpeed >= 50 || itemParams.atmosphericPressure <= 990;
+      
       prediction = {
-        cycloneDetected: false,
-        classification: 'No Cyclone / Calm Ocean',
-        predictedWindSpeed: 16,
+        cycloneDetected,
+        classification: cycloneDetected ? 'Developing System' : 'No Cyclone / Calm Ocean',
+        predictedWindSpeed: Math.round(itemParams.windSpeed),
         confidence: 98,
-        developmentStage: 'Dissipating',
-        riskLevel: 'Low',
-        movementDirection: 'Stationary / No Cyclonic Track',
-        movementDegree: 0,
-        forwardSpeed: 0,
-        estimatedLandfall: 'None (No active cyclonic circulation)',
+        developmentStage: cycloneDetected ? 'Steady' : 'Dissipating',
+        riskLevel: cycloneDetected ? 'Moderate' : 'Low',
+        movementDirection: cycloneDetected ? 'West-Northwest (WNW)' : 'Stationary / No Cyclonic Track',
+        movementDegree: cycloneDetected ? itemParams.windDirection : 0,
+        forwardSpeed: cycloneDetected ? 14 : 0,
+        estimatedLandfall: cycloneDetected ? 'East Coast Bay of Bengal' : 'None (No active cyclonic circulation)',
         parameters: itemParams,
-        summaryExplanation: 'No organized tropical vortex or cyclonic circulation detected. Satellite imagery shows clear ocean waters with sparse non-convective clouds.',
+        summaryExplanation: cycloneDetected 
+          ? `Parameters indicate emerging localized disturbance at ${itemParams.windSpeed} km/h.`
+          : 'No organized tropical vortex or cyclonic circulation detected. Satellite imagery shows clear ocean waters with sparse non-convective clouds.',
         intensityHistory: [
-          { time: 'T-18h', windSpeed: 14 },
-          { time: 'T-12h', windSpeed: 15 },
-          { time: 'T-6h', windSpeed: 15 },
-          { time: 'Present', windSpeed: 16 },
-          { time: 'T+6h', windSpeed: 15, isProjected: true },
-          { time: 'T+12h', windSpeed: 14, isProjected: true },
-          { time: 'T+24h', windSpeed: 12, isProjected: true },
+          { time: 'T-18h', windSpeed: Math.max(10, Math.round(itemParams.windSpeed * 0.9)) },
+          { time: 'T-12h', windSpeed: Math.max(12, Math.round(itemParams.windSpeed * 0.95)) },
+          { time: 'T-6h', windSpeed: Math.max(14, Math.round(itemParams.windSpeed * 0.98)) },
+          { time: 'Present', windSpeed: Math.round(itemParams.windSpeed) },
+          { time: 'T+6h', windSpeed: Math.round(itemParams.windSpeed * (cycloneDetected ? 1.05 : 0.95)), isProjected: true },
+          { time: 'T+12h', windSpeed: Math.round(itemParams.windSpeed * (cycloneDetected ? 1.08 : 0.90)), isProjected: true },
+          { time: 'T+24h', windSpeed: Math.round(itemParams.windSpeed * (cycloneDetected ? 1.12 : 0.85)), isProjected: true },
         ],
+        cycloneTypeAnalysis: evaluateCycloneType(itemParams, cycloneDetected ? 'Developing System' : 'No Cyclone / Calm Ocean', cycloneDetected, imgItem.name),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isDemo: true,
+      };
+    } else if (isExtratropical) {
+      itemParams = userExplicitParams ? { ...userExplicitParams } : { ...SAMPLE_PARAMETERS_EXTRATROPICAL };
+      const speed = Math.round(itemParams.windSpeed);
+      prediction = {
+        cycloneDetected: true,
+        classification: 'Extratropical Cyclone (Mid-Latitude)',
+        predictedWindSpeed: speed,
+        confidence: 93,
+        developmentStage: 'Steady',
+        riskLevel: speed >= 120 ? 'Very High' : speed >= 85 ? 'High' : 'Moderate',
+        movementDirection: 'East-Northeast (ENE)',
+        movementDegree: itemParams.windDirection || 60,
+        forwardSpeed: 28,
+        estimatedLandfall: 'Atlantic Seaboard & Maritime Provinces',
+        parameters: itemParams,
+        summaryExplanation: `Asymmetric comma cloud head with active cold and warm frontal boundaries detected along mid-latitude baroclinic zone (${itemParams.latitude}°N).`,
+        intensityHistory: computeIntensityHistory(speed, 'Steady'),
+        cycloneTypeAnalysis: evaluateCycloneType(itemParams, 'Extratropical Cyclone (Mid-Latitude)', true, imgItem.name),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isDemo: true,
+      };
+    } else if (isPolar) {
+      itemParams = userExplicitParams ? { ...userExplicitParams } : { ...SAMPLE_PARAMETERS_POLAR };
+      const speed = Math.round(itemParams.windSpeed);
+      prediction = {
+        cycloneDetected: true,
+        classification: 'Polar Low Cyclone',
+        predictedWindSpeed: speed,
+        confidence: 91,
+        developmentStage: 'Intensifying',
+        riskLevel: speed >= 100 ? 'High' : 'Moderate',
+        movementDirection: 'South-Southeast (SSE)',
+        movementDegree: itemParams.windDirection || 155,
+        forwardSpeed: 22,
+        estimatedLandfall: 'Norwegian Sea / Arctic Coastal Corridor',
+        parameters: itemParams,
+        summaryExplanation: `Compact mesoscale polar low with tight spiral snow bands detected over frigid sub-polar waters (${itemParams.latitude}°N, SST ${itemParams.seaSurfaceTemperature}°C).`,
+        intensityHistory: computeIntensityHistory(speed, 'Intensifying'),
+        cycloneTypeAnalysis: evaluateCycloneType(itemParams, 'Polar Low Cyclone', true, imgItem.name),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isDemo: true,
+      };
+    } else if (isMesocyclone) {
+      itemParams = userExplicitParams ? { ...userExplicitParams } : { ...SAMPLE_PARAMETERS_MESOCYCLONE };
+      const speed = Math.round(itemParams.windSpeed);
+      prediction = {
+        cycloneDetected: true,
+        classification: 'Supercell Mesocyclone (Tornadic)',
+        predictedWindSpeed: speed,
+        confidence: 95,
+        developmentStage: 'Intensifying',
+        riskLevel: 'Very High',
+        movementDirection: 'East-Northeast (ENE)',
+        movementDegree: itemParams.windDirection || 65,
+        forwardSpeed: 45,
+        estimatedLandfall: 'Inland Continental Supercell Corridor',
+        parameters: itemParams,
+        summaryExplanation: 'Doppler radar reflectivity reveals classic hook echo with deep persistent rotating updraft inside severe thunderstorm supercell.',
+        intensityHistory: computeIntensityHistory(speed, 'Intensifying'),
+        cycloneTypeAnalysis: evaluateCycloneType(itemParams, 'Supercell Mesocyclone (Tornadic)', true, imgItem.name),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isDemo: true,
       };
     } else if (isDepression) {
-      itemParams = { ...SAMPLE_PARAMETERS_DEPRESSION };
+      itemParams = userExplicitParams ? { ...userExplicitParams } : { ...SAMPLE_PARAMETERS_DEPRESSION };
+      const speed = Math.round(itemParams.windSpeed);
+      const isStillDepression = speed < 62;
+      const depressionClass = isStillDepression ? 'Tropical Depression (Low Intensity)' : 'Cyclonic Storm';
       prediction = {
         cycloneDetected: true,
-        classification: 'Tropical Depression (Low Intensity)',
-        predictedWindSpeed: 48,
+        classification: depressionClass,
+        predictedWindSpeed: speed,
         confidence: 86,
         developmentStage: 'Steady',
-        riskLevel: 'Moderate',
+        riskLevel: speed >= 62 ? 'High' : 'Moderate',
         movementDirection: 'West-Northwest (WNW)',
-        movementDegree: 290,
+        movementDegree: itemParams.windDirection || 290,
         forwardSpeed: 14,
         estimatedLandfall: 'South Odisha & North Andhra Coast (~32-40h)',
         parameters: itemParams,
-        summaryExplanation: 'A developing tropical depression is visible with moderate convective rainbands, tracking West-Northwest (290°) at 14 km/h without an organized storm eye.',
-        intensityHistory: [
-          { time: 'T-18h', windSpeed: 38 },
-          { time: 'T-12h', windSpeed: 42 },
-          { time: 'T-6h', windSpeed: 45 },
-          { time: 'Present', windSpeed: 48 },
-          { time: 'T+6h', windSpeed: 50, isProjected: true },
-          { time: 'T+12h', windSpeed: 52, isProjected: true },
-          { time: 'T+24h', windSpeed: 55, isProjected: true },
-        ],
+        summaryExplanation: `A developing tropical depression is visible with moderate convective rainbands, tracking West-Northwest (${itemParams.windDirection}°) at 14 km/h.`,
+        intensityHistory: computeIntensityHistory(speed, 'Steady'),
+        cycloneTypeAnalysis: evaluateCycloneType(itemParams, depressionClass, true, imgItem.name),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isDemo: true,
       };
     } else if (isKnownSevere) {
-      itemParams = { ...SAMPLE_PARAMETERS_SEVERE };
+      itemParams = userExplicitParams ? { ...userExplicitParams } : { ...SAMPLE_PARAMETERS_SEVERE };
+      const speed = Math.round(itemParams.windSpeed);
+      let classification = 'Very Severe Cyclonic Storm';
+      if (speed >= 222) classification = 'Super Cyclonic Storm';
+      else if (speed >= 166) classification = 'Extremely Severe Cyclonic Storm';
+      else if (speed >= 118) classification = 'Very Severe Cyclonic Storm';
+      else if (speed >= 89) classification = 'Severe Cyclonic Storm';
+      else if (speed >= 62) classification = 'Cyclonic Storm';
+
       prediction = {
         cycloneDetected: true,
-        classification: 'Very Severe Cyclonic Storm',
-        predictedWindSpeed: 145,
+        classification,
+        predictedWindSpeed: speed,
         confidence: 94,
         developmentStage: 'Intensifying',
-        riskLevel: 'High',
+        riskLevel: speed >= 166 ? 'Very High' : 'High',
         movementDirection: 'North-Northwest (NNW)',
-        movementDegree: 335,
+        movementDegree: itemParams.windDirection || 335,
         forwardSpeed: 19,
         estimatedLandfall: 'Puri / Paradip Coast, Odisha (~24-30h)',
         parameters: itemParams,
-        summaryExplanation: 'Dense overcast eyewall with high-velocity spiral rainbands detected. Vortex is tracking North-Northwest (335°) at 19 km/h under favorable subtropical ridge steering.',
-        intensityHistory: computeIntensityHistory(145, 'Intensifying'),
+        summaryExplanation: `Dense overcast eyewall with high-velocity spiral rainbands detected. Vortex is tracking North-Northwest (${itemParams.windDirection}°) at 19 km/h under favorable subtropical ridge steering.`,
+        intensityHistory: computeIntensityHistory(speed, 'Intensifying'),
+        cycloneTypeAnalysis: evaluateCycloneType(itemParams, classification, true, imgItem.name),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isDemo: true,
       };
@@ -817,6 +1331,15 @@ export async function predictCycloneBatch(
       } else {
         itemParams = prediction.parameters;
       }
+    }
+
+    if (!prediction.cycloneTypeAnalysis) {
+      prediction.cycloneTypeAnalysis = evaluateCycloneType(
+        itemParams,
+        prediction.classification,
+        prediction.cycloneDetected,
+        imgItem.name
+      );
     }
 
     items.push({
